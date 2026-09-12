@@ -2,52 +2,42 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // 사용자 정보 및 역할 (교사: teacher, 학생: student)
-    match /users/{userId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == userId;
-    }
-
-    // 교사(teacher) 권한 확인 함수
-    function isTeacher() {
-      return request.auth != null && (
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'teacher'
-      );
-    }
-
-    // 담벼락 컬렉션 (test-class-wall)
+    // test-class-wall 컬렉션 보안 규칙
     match /test-class-wall/{docId} {
-      // 읽기: 로그인한 사용자는 모두 읽기 가능
+      // 1) 비로그인 읽기 거부 (로그인 사용자만 읽기 가능)
       allow read: if request.auth != null;
 
-      // 생성: 5글자 이상 입력 & 교사는 모든 생성 가능, 학생은 본인 uid로만 생성 가능 (타인 명의 도용 불가)
+      // 2) 비로그인 작성 거부 및 uid 검증:
+      //    - text: 5글자 이상 문자열
+      //    - createdAt: 밀리초 숫자 (Date.now())
+      //    - uid: 로그인한 사용자 본인의 uid와 일치해야 함 (다른 uid로 작성 거부)
       allow create: if request.auth != null
-                    && request.resource.data.text is string
-                    && request.resource.data.text.size() >= 5
-                    && (isTeacher() || request.resource.data.uid == request.auth.uid);
+        && request.resource.data.text is string
+        && request.resource.data.text.size() >= 5
+        && request.resource.data.createdAt is number
+        && request.resource.data.uid is string
+        && request.resource.data.uid == request.auth.uid;
 
-      // 수정: 교사만 가능 (학생은 타인 및 본인 메모 수정 불가)
-      allow update: if isTeacher();
+      // 3) 수정 거부
+      allow update: if false;
 
-      // 삭제: 교사는 모든 메모 삭제 가능, 학생은 본인 메모만 삭제 가능 (타인 메모 건들기 불가)
-      allow delete: if isTeacher() || (
-        resource.data.uid == request.auth.uid
-      );
+      // 4) 비로그인 삭제 거부 및 타인 메모 삭제 거부 (본인 작성 메모만 삭제 가능)
+      allow delete: if request.auth != null
+        && resource.data.uid == request.auth.uid;
     }
 
-    // memos 컬렉션도 동일하게 적용
+    // memos 컬렉션 (기존 컬렉션 호환용)
     match /memos/{memoId} {
       allow read: if request.auth != null;
       allow create: if request.auth != null
-                    && request.resource.data.text is string
-                    && request.resource.data.text.size() >= 5
-                    && (isTeacher() || request.resource.data.uid == request.auth.uid);
-      allow update: if isTeacher();
-      allow delete: if isTeacher() || (
-        resource.data.uid == request.auth.uid
-      );
+        && request.resource.data.text is string
+        && request.resource.data.text.size() >= 5
+        && request.resource.data.createdAt is number
+        && request.resource.data.uid is string
+        && request.resource.data.uid == request.auth.uid;
+      allow update: if false;
+      allow delete: if request.auth != null
+        && resource.data.uid == request.auth.uid;
     }
   }
 }
