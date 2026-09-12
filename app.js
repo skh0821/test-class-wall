@@ -120,6 +120,11 @@ async function render() {
   const wall = document.getElementById("wall");
   wall.innerHTML = "";
 
+  // 로그아웃 상태이면 메모 목록을 정리(화면 비움)합니다
+  if (!currentUser) {
+    return;
+  }
+
   const memos = await loadMemos();
   memos.forEach(function (memo) {
     wall.appendChild(makeMemo(memo));
@@ -204,6 +209,7 @@ function renderUserArea() {
 
     input.disabled = true;
     input.placeholder = "로그인 후 메모를 작성할 수 있습니다.";
+    input.value = "";
   }
 }
 
