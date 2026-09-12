@@ -14,7 +14,9 @@ import {
   deleteDoc,
   doc,
   orderBy,
-  query
+  query,
+  getDoc,
+  setDoc
 } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 import {
   getAuth,
@@ -42,6 +44,8 @@ const provider = new GoogleAuthProvider();
 
 // 현재 로그인한 사용자 정보 (로그인 안 됨: null)
 let currentUser = null;
+// 현재 사용자 역할 ('teacher' 또는 'student')
+let currentUserRole = "student";
 
 
 // ===================================================
@@ -92,7 +96,8 @@ async function addMemo(text) {
       text: trimmedText,
       createdAt: Date.now(),
       uid: currentUser.uid,
-      author: currentUser.displayName || "익명"
+      author: currentUser.displayName || "익명",
+      role: currentUserRole
     });
     return true;
   } catch (error) {
@@ -136,8 +141,11 @@ function makeMemo(memo) {
   const div = document.createElement("div");
   div.className = "memo";
 
-  // 백엔드 2: 내가 쓴 메모(또는 작성자 정보가 없는 기존 메모)에만 삭제(×) 버튼 표시
-  if (!memo.uid || (currentUser && memo.uid === currentUser.uid)) {
+  // 교사(teacher)는 모든 메모를 삭제할 수 있고,
+  // 학생(student)은 오직 본인이 쓴 메모만 삭제할 수 있습니다 (다른 사람 메모는 건들지 못함).
+  const canDelete = currentUser && (currentUserRole === "teacher" || memo.uid === currentUser.uid);
+
+  if (canDelete) {
     const del = document.createElement("button");
     del.textContent = "×";
     del.addEventListener("click", async function () {
@@ -151,13 +159,14 @@ function makeMemo(memo) {
   span.textContent = memo.text;
   div.appendChild(span);
 
-  // 작성자 정보가 있으면 하단에 표시
+  // 작성자 정보 및 역할 뱃지 표시
   if (memo.author) {
     const authorDiv = document.createElement("div");
     authorDiv.style.fontSize = "12px";
     authorDiv.style.color = "#777";
     authorDiv.style.marginTop = "6px";
-    authorDiv.textContent = `- ${memo.author}`;
+    const roleBadge = memo.role === "teacher" ? " (교사)" : " (학생)";
+    authorDiv.textContent = `- ${memo.author}${memo.role ? roleBadge : ""}`;
     div.appendChild(authorDiv);
   }
 
@@ -166,7 +175,7 @@ function makeMemo(memo) {
 
 
 // ===================================================
-// 사용자 로그인 영역 (Google 로그인)
+// 사용자 로그인 영역 (Google 로그인 및 역할 표시)
 // ===================================================
 
 const userArea = document.getElementById("userArea");
@@ -175,8 +184,24 @@ function renderUserArea() {
   userArea.innerHTML = "";
 
   if (currentUser) {
+    const roleText = currentUserRole === "teacher" ? "교사" : "학생";
     const userSpan = document.createElement("span");
-    userSpan.textContent = `${currentUser.displayName || "사용자"}님 `;
+    userSpan.textContent = `${currentUser.displayName || "사용자"}님 [${roleText}] `;
+
+    // 실습 테스트를 위한 역할 전환 버튼
+    const switchBtn = document.createElement("button");
+    switchBtn.style.marginRight = "6px";
+    switchBtn.textContent = currentUserRole === "teacher" ? "학생으로 전환" : "교사로 전환";
+    switchBtn.addEventListener("click", async function () {
+      currentUserRole = currentUserRole === "teacher" ? "student" : "teacher";
+      try {
+        await setDoc(doc(db, "users", currentUser.uid), { role: currentUserRole }, { merge: true });
+      } catch (err) {
+        console.error("역할 저장 실패:", err);
+      }
+      renderUserArea();
+      render();
+    });
 
     const logoutBtn = document.createElement("button");
     logoutBtn.textContent = "로그아웃";
@@ -189,10 +214,13 @@ function renderUserArea() {
     });
 
     userArea.appendChild(userSpan);
+    userArea.appendChild(switchBtn);
     userArea.appendChild(logoutBtn);
 
     input.disabled = false;
-    input.placeholder = "메모를 쓰고 엔터 (5글자 이상)";
+    input.placeholder = currentUserRole === "teacher"
+      ? "메모를 쓰고 엔터 (교사: 모든 권한)"
+      : "메모를 쓰고 엔터 (학생: 본인 메모 생성만 가능)";
   } else {
     const loginBtn = document.createElement("button");
     loginBtn.textContent = "Google로 로그인";
@@ -251,8 +279,28 @@ input.addEventListener("keydown", async function (e) {
 // 로그인 상태 변화 감지 및 첫 화면 렌더링
 // ===================================================
 
-onAuthStateChanged(auth, function (user) {
+onAuthStateChanged(auth, async function (user) {
   currentUser = user;
+  if (currentUser) {
+    // Firestore users 컬렉션에서 역할(teacher / student) 조회
+    try {
+      const userDocRef = doc(db, "users", currentUser.uid);
+      const userDocSnap = await getDoc(userDocRef);
+      if (userDocSnap.exists() && userDocSnap.data().role) {
+        currentUserRole = userDocSnap.data().role;
+      } else {
+        // 최초 로그인 시 교사(teacher)로 기본 등록
+        currentUserRole = "teacher";
+        await setDoc(userDocRef, { role: currentUserRole });
+      }
+    } catch (err) {
+      console.error("역할 조회 실패:", err);
+      currentUserRole = "student";
+    }
+  } else {
+    currentUserRole = "student";
+  }
+
   renderUserArea();
   render();
   if (currentUser) {
