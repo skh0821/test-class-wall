@@ -47,9 +47,9 @@ ${memoListText}
 2. 학생들이 함께 나누면 좋을 생각거리나 다정한 응원의 한마디
 (친근하고 따뜻한 어조(해요체)로 작성해 주세요.)`;
 
-    // 무료 사용 가능한 gemini-1.5-flash 모델 호출
+    // 무료 티어에서 지원되는 최신 Gemini 3.8 Flash 모델 호출
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`,
       {
         method: "POST",
         headers: {
