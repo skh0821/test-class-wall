@@ -175,6 +175,63 @@ function makeMemo(memo) {
 
 
 // ===================================================
+// AI 코멘트 생성 (교사 전용 기능 - Vercel /api/gemini 호출)
+// ===================================================
+
+async function generateAiComment() {
+  const aiArea = document.getElementById("aiArea");
+  const aiContent = document.getElementById("aiContent");
+  const aiBtn = document.getElementById("aiCommentBtn");
+
+  const memos = await loadMemos();
+  if (!memos || memos.length === 0) {
+    alert("담벼락에 게시물이 없습니다. 메모를 먼저 작성해 주세요.");
+    return;
+  }
+
+  if (aiBtn) {
+    aiBtn.disabled = true;
+    aiBtn.textContent = "🤖 AI 코멘트 작성 중...";
+  }
+
+  if (aiArea) aiArea.style.display = "block";
+  if (aiContent) aiContent.textContent = "AI가 학생들의 글을 종합하여 따뜻한 코멘트를 작성하고 있습니다. 잠시만 기다려 주세요...";
+
+  try {
+    // AGENTS.md 규칙 준수: uid, 이메일 등 개인정보를 제외하고 오직 메모 텍스트만 전송
+    const texts = memos.map(function (m) { return m.text; });
+
+    const res = await fetch("/api/gemini", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ texts: texts })
+    });
+
+    if (!res.ok) {
+      const errData = await res.json().catch(function () { return {}; });
+      throw new Error(errData.error || `서버 응답 오류 (${res.status})`);
+    }
+
+    const data = await res.json();
+    if (aiContent) aiContent.textContent = data.comment;
+  } catch (err) {
+    console.error("AI 코멘트 생성 실패:", err);
+    if (aiContent) {
+      aiContent.textContent = "AI 코멘트를 가져오지 못했습니다.\n\n" +
+        "💡 오류 내용: " + err.message + "\n" +
+        "(참고: 로컬 Live Server에서는 Vercel 서버리스 함수(/api/gemini)가 동작하지 않습니다. " +
+        "Vercel에 배포된 사이트에서 GEMINI_API_KEY 환경변수를 설정하고 확인해 주세요.)";
+    }
+  } finally {
+    if (aiBtn) {
+      aiBtn.disabled = false;
+      aiBtn.textContent = "✨ AI 담벼락 코멘트";
+    }
+  }
+}
+
+
+// ===================================================
 // 사용자 로그인 영역 (Google 로그인 및 역할 표시)
 // ===================================================
 
@@ -203,6 +260,23 @@ function renderUserArea() {
       render();
     });
 
+    userArea.appendChild(userSpan);
+    userArea.appendChild(switchBtn);
+
+    // 교사(teacher)에게만 AI 담벼락 코멘트 버튼 표시
+    if (currentUserRole === "teacher") {
+      const aiBtn = document.createElement("button");
+      aiBtn.id = "aiCommentBtn";
+      aiBtn.style.marginRight = "6px";
+      aiBtn.style.background = "#e8f0fe";
+      aiBtn.style.color = "#1a73e8";
+      aiBtn.style.border = "1px solid #1a73e8";
+      aiBtn.style.cursor = "pointer";
+      aiBtn.textContent = "✨ AI 담벼락 코멘트";
+      aiBtn.addEventListener("click", generateAiComment);
+      userArea.appendChild(aiBtn);
+    }
+
     const logoutBtn = document.createElement("button");
     logoutBtn.textContent = "로그아웃";
     logoutBtn.addEventListener("click", async function () {
@@ -213,8 +287,6 @@ function renderUserArea() {
       }
     });
 
-    userArea.appendChild(userSpan);
-    userArea.appendChild(switchBtn);
     userArea.appendChild(logoutBtn);
 
     input.disabled = false;
@@ -222,6 +294,12 @@ function renderUserArea() {
       ? "메모를 쓰고 엔터 (교사: 모든 권한)"
       : "메모를 쓰고 엔터 (학생: 본인 메모 생성만 가능)";
   } else {
+    // 로그아웃 시 AI 코멘트 영역도 초기화
+    const aiArea = document.getElementById("aiArea");
+    const aiContent = document.getElementById("aiContent");
+    if (aiArea) aiArea.style.display = "none";
+    if (aiContent) aiContent.textContent = "";
+
     const loginBtn = document.createElement("button");
     loginBtn.textContent = "Google로 로그인";
     loginBtn.addEventListener("click", async function () {

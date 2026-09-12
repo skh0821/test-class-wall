@@ -36,6 +36,12 @@
     <textarea id="input" rows="3" placeholder="메모를 쓰고 엔터"></textarea>
   </div>
 
+  <!-- AI 코멘트가 표시되는 영역 -->
+  <div id="aiArea" style="display: none; margin: 16px 0; padding: 14px 18px; background: #eef7ff; border-left: 4px solid #1a73e8; border-radius: 6px; max-width: 600px;">
+    <div style="font-weight: bold; margin-bottom: 6px; color: #1a73e8;">🤖 AI 선생님의 담벼락 코멘트</div>
+    <div id="aiContent" style="white-space: pre-wrap; font-size: 14px; line-height: 1.6; color: #333;"></div>
+  </div>
+
   <!-- 메모는 app.js가 그립니다 -->
   <div id="wall"></div>
 
