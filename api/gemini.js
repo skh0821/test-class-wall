@@ -1,19 +1,10 @@
 // ===================================================
-// Gemini에게 물어보는 서버 코드가 들어올 자리 (아직 비어 있습니다)
+// Gemini에게 담벼락 게시물 코멘트를 요청하는 Vercel 서버리스 함수
 //
-// 왜 서버가 필요한가요?
-//   API 키를 브라우저 코드(app.js)에 적으면 누구나 볼 수 있습니다.
-//   그래서 키는 서버에만 두고, 브라우저는 이 주소로 부탁만 합니다.
-//
-// 왜 Firebase Functions가 아니라 여기인가요?
-//   Firebase Functions는 유료 요금제(Blaze)라야 씁니다.
-//   이 프로젝트는 무료 요금제(Spark)로 진행하므로,
-//   서버가 필요한 일은 Vercel의 무료 함수로 처리합니다.
-//
-// 이 파일의 규칙
-//   api 폴더 안의 파일은 Vercel에서 자동으로 서버 주소가 됩니다.
-//   이 파일은 /api/gemini 주소가 됩니다.
-//   API 키는 코드에 적지 말고 Vercel 환경변수에 넣습니다. (process.env 로 꺼내 씁니다)
+// 규칙:
+// - Firebase Functions(유료 Blaze 필요) 대신 Vercel 무료 서버리스 함수를 사용합니다.
+// - API 키는 클라이언트(app.js)에 노출하지 않고 Vercel 환경변수(process.env.GEMINI_API_KEY)로 관리합니다.
+// - 학생 개인정보(uid, 이메일 등)는 전달받지 않고 오직 메모 내용(text)만 처리합니다.
 // ===================================================
 
 export default async function handler(req, res) {
@@ -47,44 +38,64 @@ ${memoListText}
 2. 학생들이 함께 나누면 좋을 생각거리나 다정한 응원의 한마디
 (친근하고 따뜻한 어조(해요체)로 작성해 주세요.)`;
 
-    // 무료 티어에서 지원되는 최신 Gemini 3.8 Flash 모델 호출
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
+    // 무료 티어 지원 최신 모델 목록 (일시적 서버 과부하/503 대비 자동 폴백 적용)
+    const modelsToTry = [
+      "gemini-2.5-flash",
+      "gemini-2.0-flash",
+      "gemini-1.5-flash"
+    ];
+
+    let lastError = null;
+
+    for (const model of modelsToTry) {
+      try {
+        const response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              contents: [
                 {
-                  text: prompt
+                  parts: [
+                    {
+                      text: prompt
+                    }
+                  ]
                 }
               ]
-            }
-          ]
-        })
+            })
+          }
+        );
+
+        if (response.ok) {
+          const data = await response.json();
+          const comment = data.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (comment) {
+            return res.status(200).json({ comment: comment, model: model });
+          }
+        } else {
+          const errorText = await response.text();
+          console.warn(`[${model}] 호출 실패 (${response.status}):`, errorText);
+          let parsedMessage = errorText;
+          try {
+            const errObj = JSON.parse(errorText);
+            parsedMessage = errObj.error?.message || errorText;
+          } catch (_) {}
+          lastError = `${model} (${response.status}): ${parsedMessage}`;
+        }
+      } catch (fetchErr) {
+        console.warn(`[${model}] 네트워크 에러:`, fetchErr.message);
+        lastError = `${model}: ${fetchErr.message}`;
       }
-    );
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("Gemini API 호출 에러:", response.status, errorText);
-      return res.status(response.status).json({
-        error: `Gemini API 호출에 실패했습니다 (${response.status})`
-      });
     }
 
-    const data = await response.json();
-    const comment = data.candidates?.[0]?.content?.parts?.[0]?.text;
-
-    if (!comment) {
-      return res.status(500).json({ error: "Gemini로부터 코멘트를 생성받지 못했습니다." });
-    }
-
-    return res.status(200).json({ comment: comment });
+    // 모든 모델에서 실패한 경우
+    return res.status(503).json({
+      error: `Gemini 서버가 일시적으로 응답하지 못했습니다. 잠시 후 다시 시도해 주세요. (${lastError})`
+    });
   } catch (err) {
     console.error("서버 처리 중 오류 발생:", err);
     return res.status(500).json({ error: "서버 처리 중 오류가 발생했습니다: " + err.message });
