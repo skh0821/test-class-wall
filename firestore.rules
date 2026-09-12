@@ -1,0 +1,19 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // test-class-wall 컬렉션: text가 5글자 이상일 때만 저장(create, update) 허용
+    match /test-class-wall/{docId} {
+      allow read, delete: if true;
+      allow create, update: if request.resource.data.text is string
+                            && request.resource.data.text.size() >= 5;
+    }
+
+    // memos 컬렉션: text가 5글자 이상일 때만 저장(create, update) 허용
+    match /memos/{memoId} {
+      allow read, delete: if true;
+      allow create, update: if request.resource.data.text is string
+                            && request.resource.data.text.size() >= 5;
+    }
+  }
+}
